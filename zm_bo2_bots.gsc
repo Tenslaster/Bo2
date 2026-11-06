@@ -125,35 +125,34 @@ botaction(stance)
 
 init()
 {
-	setdvar("kill_overlapping_players", 0);
-	
-	bot_set_dvars();
-	
-	flag_wait("initial_blackscreen_passed");
-	
-	if(!isdefined(level.using_bot_weapon_logic))
-		level.using_bot_weapon_logic = 1;
-	
-	if(!isdefined(level.using_bot_revive_logic))
-		level.using_bot_revive_logic = 1;
-	
+    setdvar("kill_overlapping_players", 0);
+
+    // Start explicitly in stay mode; wander is only enabled by the F6 command.
+    if(!isdefined(level.bot_command_mode))
+        level.bot_command_mode = "stay";
+
+    bot_set_dvars();
+    flag_wait("initial_blackscreen_passed");
+
+    if(!isdefined(level.using_bot_weapon_logic))
+        level.using_bot_weapon_logic = 1;
+    if(!isdefined(level.using_bot_revive_logic))
+        level.using_bot_revive_logic = 1;
     if(!isdefined(level.mystery_box_teddy_locations))
         level.mystery_box_teddy_locations = [];
-	
+
     level.box_in_use_by_bot = undefined;
-	
-	init_zombie_cache();
+    init_zombie_cache();
     init_vending_cache();
     init_door_cache();
     init_debris_cache();
-	
-	bot_amount = getdvarintdefault("zm_bots", 7);
-	
-	for(i = 0; i < bot_amount; i++)
-		spawn_bot();
-	
-	level thread bot_health_regen();
-	
+
+    bot_amount = getdvarintdefault("zm_bots", 7);
+    for(i = 0; i < bot_amount; i++)
+        spawn_bot();
+
+    level thread bot_health_regen();
+
     foreach(player in get_players())
     {
         if(!isdefined(player.pers["isbot"]))
@@ -2301,31 +2300,16 @@ bot_simulate_self_revive(corpse)
 manual_bot_teleport_monitor()
 {
     self endon("disconnect");
-	
     level endon("end_game");
-    
+
+    // F7 is bound to Action Slot 3. One press teleports the whole bot group.
     self notifyonplayercommand("teleport_pressed", "+actionslot 3");
-    
-    last_press_time = 0;
-    
+
     for(;;)
     {
         self waittill("teleport_pressed");
-        
-        current_time = gettime();
-        
-        if(current_time - last_press_time < 500)
-        {
-            self execute_bot_teleport();
-            
-            last_press_time = 0;
-			
-            wait 1; 
-        }
-        else
-        {
-            last_press_time = current_time;
-        }
+        self execute_bot_teleport();
+        wait 0.75;
     }
 }
 
@@ -2394,31 +2378,16 @@ bot_staggered_teleport(bots_to_teleport, offsets)
 bot_command_mode_monitor()
 {
     self endon("disconnect");
-	
     level endon("end_game");
 
-    self notifyonplayercommand("command_pressed", "+actionslot 2");
-
-    last_press_time = 0;
+    // F6 is bound to Action Slot 4. Slots 1/2 stay exclusive to menu scrolling.
+    self notifyonplayercommand("command_pressed", "+actionslot 4");
 
     for(;;)
     {
         self waittill("command_pressed");
-
-        current_time = gettime();
-
-        if(current_time - last_press_time < 500)
-        {
-            self bot_cycle_command_mode();
-
-            last_press_time = 0;
-
-            wait 1;
-        }
-        else
-        {
-            last_press_time = current_time;
-        }
+        self bot_cycle_command_mode();
+        wait 0.35;
     }
 }
 
