@@ -51,7 +51,7 @@ MM_OnPlayerSpawned()
             if(firstSpawn)
             {
                 self iprintlnbold("^2ULTIMATE ZM MENU LOADED");
-                self iprintln("^7Aim + Melee: open | Slot 1/2: scroll | Jump: select | Melee: back");
+                self iprintln("^7Aim + Melee: open | Slot 1/2: scroll | Jump: select | Melee: back | F6: bot mode | F7: teleport bots");
                 firstSpawn = false;
             }
         }
@@ -324,7 +324,7 @@ MM_WaitRelease()
     timeout = 0;
     while((self meleeButtonPressed() || self adsButtonPressed()) && timeout < 40)
     {
-        wait 0.05;
+        wait 0.025;
         timeout++;
     }
 }
@@ -336,7 +336,8 @@ MenuInput()
 
     for(;;)
     {
-        wait 0.05;
+        // Faster polling and shorter repeat gates make the menu more responsive.
+        wait 0.025;
 
         if(!self.menuOpen)
         {
@@ -351,7 +352,6 @@ MenuInput()
             continue;
         }
 
-        // Close the menu if the player goes down.
         if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
         {
             self MM_CloseMenu();
@@ -366,17 +366,17 @@ MenuInput()
         else if(self actionSlotOneButtonPressed())
         {
             self MenuScroll(-1);
-            wait 0.15;
+            wait 0.08;
         }
         else if(self actionSlotTwoButtonPressed())
         {
             self MenuScroll(1);
-            wait 0.15;
+            wait 0.08;
         }
         else if(self jumpButtonPressed())
         {
             self MenuSelect();
-            wait 0.3;
+            wait 0.15;
         }
     }
 }
@@ -1879,36 +1879,53 @@ MM_ESPDisconnectCleanup()
     }
 }
 
+// A single thin waypoint bar; four bars make an outlined ESP marker.
+MM_CreateESPLineHud(width, height)
+{
+    hud = newClientHudElem(self);
+    hud.archived = 1;
+    hud setWaypoint(true, "white");
+    hud.foreground = false;
+    hud.hideWhenInMenu = true;
+    hud.sort = 1;
+    hud.alpha = 0;
+    hud.color = self.espColor;
+    hud scaleOverTime(0.1, width, height);
+    return hud;
+}
+
 ESPLoop()
 {
     self endon("disconnect");
 
-    // Prevent two waypoint pools from being created if ESP is toggled rapidly.
+    // Prevent duplicate waypoint pools if ESP is toggled rapidly.
     if(isDefined(self.mmESPThreadActive) && self.mmESPThreadActive)
         return;
 
     self.mmESPThreadActive = true;
-
     if(!isDefined(self.espColor))
         self.espColor = (1, 0, 0);
 
-    // A bounded pool prevents HUD-element overflow while showing the nearest
-    // ten live zombies. Coordinates are world-space, following the BO2 HUD API.
-    maxMarkers = 10;
+    // Four thin waypoint bars form an empty frame instead of a filled square.
+    // Four nearest targets use 16 HUD elements instead of 10 solid markers.
+    maxMarkers = 4;
+    topHuds = [];
+    bottomHuds = [];
+    leftHuds = [];
+    rightHuds = [];
     huds = [];
 
     for(i = 0; i < maxMarkers; i++)
     {
-        hud = newClientHudElem(self);
-        hud.archived = 1;
-        hud setWaypoint(true, "white");
-        hud.foreground = false;
-        hud.hideWhenInMenu = true;
-        hud.sort = 1;
-        hud.alpha = 0;
-        hud.color = self.espColor;
-        hud scaleOverTime(0.1, 14, 14);
-        huds[huds.size] = hud;
+        topHuds[i] = self MM_CreateESPLineHud(8, 2);
+        bottomHuds[i] = self MM_CreateESPLineHud(8, 2);
+        leftHuds[i] = self MM_CreateESPLineHud(2, 8);
+        rightHuds[i] = self MM_CreateESPLineHud(2, 8);
+
+        huds[huds.size] = topHuds[i];
+        huds[huds.size] = bottomHuds[i];
+        huds[huds.size] = leftHuds[i];
+        huds[huds.size] = rightHuds[i];
     }
 
     self.mmESPHuds = huds;
@@ -1921,6 +1938,7 @@ ESPLoop()
 
         zombies = MM_AllEnemies();
         selected = [];
+        viewRight = anglesToRight(self getPlayerAngles());
 
         for(slot = 0; slot < maxMarkers; slot++)
         {
@@ -1938,7 +1956,6 @@ ESPLoop()
                         break;
                     }
                 }
-
                 if(alreadySelected)
                     continue;
 
@@ -1957,14 +1974,47 @@ ESPLoop()
                 if(!isDefined(head))
                     head = best.origin + (0, 0, 60);
 
-                huds[slot].x = head[0];
-                huds[slot].y = head[1];
-                huds[slot].z = head[2];
-                huds[slot].color = self.espColor;
-                huds[slot].alpha = 1;
+                // Keep the entire marker above the head, not over the face.
+                markerCenter = head + (0, 0, 18);
+                markerDistance = distance(self.origin, best.origin);
+                halfWidth = clamp(markerDistance * 0.0035, 4, 9);
+                halfHeight = clamp(markerDistance * 0.005, 6, 12);
+
+                sideOffset = (viewRight[0] * halfWidth, viewRight[1] * halfWidth, viewRight[2] * halfWidth);
+                topPos = markerCenter + (0, 0, halfHeight);
+                bottomPos = markerCenter - (0, 0, halfHeight);
+                leftPos = markerCenter - sideOffset;
+                rightPos = markerCenter + sideOffset;
+
+                topHuds[slot].x = topPos[0];
+                topHuds[slot].y = topPos[1];
+                topHuds[slot].z = topPos[2];
+                bottomHuds[slot].x = bottomPos[0];
+                bottomHuds[slot].y = bottomPos[1];
+                bottomHuds[slot].z = bottomPos[2];
+                leftHuds[slot].x = leftPos[0];
+                leftHuds[slot].y = leftPos[1];
+                leftHuds[slot].z = leftPos[2];
+                rightHuds[slot].x = rightPos[0];
+                rightHuds[slot].y = rightPos[1];
+                rightHuds[slot].z = rightPos[2];
+
+                topHuds[slot].color = self.espColor;
+                bottomHuds[slot].color = self.espColor;
+                leftHuds[slot].color = self.espColor;
+                rightHuds[slot].color = self.espColor;
+                topHuds[slot].alpha = 1;
+                bottomHuds[slot].alpha = 1;
+                leftHuds[slot].alpha = 1;
+                rightHuds[slot].alpha = 1;
             }
             else
-                huds[slot].alpha = 0;
+            {
+                topHuds[slot].alpha = 0;
+                bottomHuds[slot].alpha = 0;
+                leftHuds[slot].alpha = 0;
+                rightHuds[slot].alpha = 0;
+            }
         }
 
         wait 0.1;
